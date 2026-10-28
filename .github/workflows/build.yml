@@ -1,0 +1,51 @@
+name: build-micromind
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install
+        run: |
+          pip install huggingface_hub
+          git clone --depth 1 https://github.com/ggml-org/llama.cpp
+          pip install torch --index-url https://download.pytorch.org/whl/cpu
+          pip install -r llama.cpp/requirements/requirements-convert_hf_to_gguf.txt
+
+      - name: Download dan patch model dasar
+        run: python prepare.py
+
+      - name: Convert ke GGUF Q8_0
+        run: |
+          mkdir -p out
+          python llama.cpp/convert_hf_to_gguf.py base --outtype q8_0 --model-name MicroMind --outfile out/MicroMind.gguf
+          ls -lh out
+
+      - name: Build llama-cli dan tes jalan
+        continue-on-error: true
+        run: |
+          cd llama.cpp
+          cmake -B build -DGGML_NATIVE=OFF -DLLAMA_CURL=OFF -DCMAKE_BUILD_TYPE=Release
+          cmake --build build --target llama-cli -j4
+          cd ..
+          timeout 900 llama.cpp/build/bin/llama-cli -m out/MicroMind.gguf -c 1024 -n 150 -st -p "Tulis fungsi Python untuk mengecek bilangan prima." < /dev/null
+
+      - name: Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "v${{ github.run_number }}" out/MicroMind.gguf \
+            --title "MicroMind v${{ github.run_number }}" \
+            --notes-file MODEL_CARD.md

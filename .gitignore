@@ -1,0 +1,7 @@
+hasil/
+base/
+out/
+llama.cpp/
+deploy.py
+ambil.py
+__pycache__/
